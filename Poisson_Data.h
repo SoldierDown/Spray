@@ -30,6 +30,11 @@ struct Poisson_Data
     T ch12;     // temp
     T ch13;     // temp
     T ch14;     // temp
+    T ch15;     // temp
+    T ch16;     // temp
+    T ch17;     // temp
+    T ch18;     // temp
+    T ch19;     // temp
 };
 }
 #endif

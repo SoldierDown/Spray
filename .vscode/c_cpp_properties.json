@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/spray_2d/*",
+                "${workspaceFolder}/spray_3d/*",
+                "/home/hertz/Nova/Library/Dynamics/include",
+                "/home/hertz/Nova/Library/Geometry/include",
+                "/home/hertz/Nova/Library/SPGrid/include",
+                "/home/hertz/Nova/Library/Tools/include",
+                "/usr/local/include",
+                "/usr/include/x86_64-linux-gnu",
+                "/usr/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}

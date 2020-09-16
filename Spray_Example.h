@@ -34,7 +34,7 @@ class Spray_Example: public Example<T,d>
     int iteration_counter;
     bool nd;
     bool const_source;
-    T const_alpha_air_value;
+    T const_alpha1_value;
     T diffusion_rt=(T)0.;
     T qc_advection_rt=(T)0.;
     T qc_update_rt=(T)0.;
@@ -47,19 +47,21 @@ class Spray_Example: public Example<T,d>
     T Fc;
     T tau;
     T_INDEX counts;
-    int levels,mg_levels,cg_iterations,cg_restart_iterations;
+    int level,levels,mg_levels,cg_iterations,cg_restart_iterations;
     T cfl,cg_tolerance;
     Hierarchy *hierarchy;
     Hierarchy_Rasterizer *rasterizer;
 
+    T rho1;
+    T rho2;
 
-    T Struct_type::* alpha_air_channel;
-    T Struct_type::* alpha_air_backup_channel;
-    T Struct_type::* alpha_water_channel;
-    T Struct_type::* alpha_water_backup_channel;
+    T Struct_type::* alpha1_channel;
+    T Struct_type::* alpha1_backup_channel;
+    T Struct_type::* alpha2_channel;
+    T Struct_type::* alpha2_backup_channel;
 
-    Vector<T Struct_type::*,d> face_velocity_air_channels;
-    Vector<T Struct_type::*,d> face_velocity_water_channels;
+    Vector<T Struct_type::*,d> face_velocity1_channels;
+    Vector<T Struct_type::*,d> face_velocity2_channels;
     Vector<Vector<bool,2>,d> domain_walls;
 
     Array<Implicit_Object<T,d>*> velocity_sources;
@@ -78,22 +80,22 @@ class Spray_Example: public Example<T,d>
     void Initialize();
     void Initialize_SPGrid();
     void Limit_Dt(T& dt,const T time) override;
-    void Advect_Alpha(const T dt);
-    void Advect_Face_Vector(const T dt);
-    void Diffuse_Density(const T dt);
+    void Advect_Alpha(const T& dt);
     void Backup_Alpha();
-    void Ficks_Diffusion(const T dt);
+    void Apply_Drag_Force(const T& dt);
+    void Advect_Face_Vector(const T& dt);
+    void Ficks_Diffusion(const T& dt);
     void Modify_Density_With_Sources();
-    void Add_Source(const T dt);
-    void Advect_Face_Velocities(const T dt);
+    void Add_Source(const T& dt);
+    void Advect_Face_Velocities(const T& dt);
     void Set_Neumann_Faces_Inside_Sources();
     void Initialize_Velocity_Field();
     void Project();
     void Register_Options() override;
     void Parse_Options() override;
-    void Read_Output_Files(const int frame);
+    void Read_Output_Files(const int& frame);
     void Write_Output_Files(const int frame) const override;
-    void Wrtie_To_File(const int frame);
+    void Wrtie_To_File(const int& frame);
 //######################################################################
 };
 }
