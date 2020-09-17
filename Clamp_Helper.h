@@ -29,7 +29,7 @@ class Clamp_Heler
         auto clamp_heler=[&](uint64_t offset)
         {
             for(int e=0;e<Flag_array_mask::elements_per_block;++e,offset+=sizeof(Flags_type))
-                if(flags(offset)&(Cell_Type_Interior|Cell_Type_Dirichlet)) data(offset)=Nova_Utilities::Clamp(data(offset),(T)0.,(T)1.);
+                if(flags(offset)&(Cell_Type_Interior|Cell_Type_Dirichlet)) data(offset)=Nova_Utilities::Clamp(data(offset),(T)1.e-3,(T)1.-(T)1.e-3);
         };
         SPGrid_Computations::Run_Parallel_Blocks(blocks,clamp_heler);
     }

@@ -26,18 +26,18 @@ class Relative_Velocity_Helper
     using Topology_Helper           = Grid_Topology_Helper<Flag_array_mask>;
 
   public:
-    Relative_Velocity_Helper(Hierarchy& hierarchy,const std::pair<const uint64_t*,unsigned>& blocks,
+    Relative_Velocity_Helper(Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
         Channel_Vector& face_velocity1_channels,Channel_Vector& face_velocity2_channels, Channel_Vector& rel_face_velocity_channels,
         const bool& u12)
-    { Run(hierarchy,blocks,face_velocity1_channels,face_velocity2_channels,rel_face_velocity_channels,u12);}
+    { Run(allocator,blocks,face_velocity1_channels,face_velocity2_channels,rel_face_velocity_channels,u12);}
 
-    void Run(Hierarchy& hierarchy,const std::pair<const uint64_t*,unsigned>& blocks,
+    void Run(Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
         Channel_Vector& face_velocity1_channels,Channel_Vector& face_velocity2_channels, Channel_Vector& rel_face_velocity_channels,
         const bool& u12) const
     {
         const int level=0;
-        auto block_size=hierarchy.Allocator(level).Block_Size();
-        auto flags=hierarchy.Allocator(level).template Get_Const_Array<Struct_type,unsigned>(&Struct_type::flags);
+        auto block_size=allocator.Block_Size();
+        auto flags=allocator.template Get_Const_Array<Struct_type,unsigned>(&Struct_type::flags);
 
         auto u12_helper=[&](uint64_t offset)
         {
@@ -45,11 +45,18 @@ class Relative_Velocity_Helper
             T_INDEX base_index(Flag_array_mask::LinearToCoord(offset));
             for(unsigned e=0;e<Flag_array_mask::elements_per_block;++e,offset+=sizeof(Flags_type)){
                 for(int axis=0;axis<d;++axis){
-                    auto v1_data=hierarchy.Allocator(level).template Get_Const_Array<Struct_type,T>(face_velocity1_channels(axis));
-                    auto v2_data=hierarchy.Allocator(level).template Get_Const_Array<Struct_type,T>(face_velocity2_channels(axis));
-                    auto v12_data=hierarchy.Allocator(level).template Get_Array<Struct_type,T>(rel_face_velocity_channels(axis));
+                    auto v1_data=allocator.template Get_Const_Array<Struct_type,T>(face_velocity1_channels(axis));
+                    auto v2_data=allocator.template Get_Const_Array<Struct_type,T>(face_velocity2_channels(axis));
+                    auto v12_data=allocator.template Get_Array<Struct_type,T>(rel_face_velocity_channels(axis));
                     const unsigned face_valid_mask=Topology_Helper::Face_Valid_Mask(axis); const unsigned face_active_mask=Topology_Helper::Face_Active_Mask(axis);
-                    if(flags(offset)&face_valid_mask)  v12_data(offset)=v2_data(offset)-v1_data(offset);}
+                    if(flags(offset)&face_valid_mask)  {
+                        v12_data(offset)=v2_data(offset)-v1_data(offset);
+                        if(std::isnan(v2_data(offset))) {Log::cout<<"NAN v1 in Relative_Velocity_Helper"<<std::endl;exit(0);}
+                        if(std::isnan(v1_data(offset))) {Log::cout<<"NAN v2 in Relative_Velocity_Helper"<<std::endl;exit(0);}
+                    }
+                    
+                    
+                    }
                 range_iterator.Next();}
         };
         auto u21_helper=[&](uint64_t offset)
@@ -58,9 +65,9 @@ class Relative_Velocity_Helper
             T_INDEX base_index(Flag_array_mask::LinearToCoord(offset));
             for(unsigned e=0;e<Flag_array_mask::elements_per_block;++e,offset+=sizeof(Flags_type)){
                 for(int axis=0;axis<d;++axis){
-                    auto v1_data=hierarchy.Allocator(level).template Get_Const_Array<Struct_type,T>(face_velocity1_channels(axis));
-                    auto v2_data=hierarchy.Allocator(level).template Get_Const_Array<Struct_type,T>(face_velocity2_channels(axis));
-                    auto v21_data=hierarchy.Allocator(level).template Get_Array<Struct_type,T>(rel_face_velocity_channels(axis));
+                    auto v1_data=allocator.template Get_Const_Array<Struct_type,T>(face_velocity1_channels(axis));
+                    auto v2_data=allocator.template Get_Const_Array<Struct_type,T>(face_velocity2_channels(axis));
+                    auto v21_data=allocator.template Get_Array<Struct_type,T>(rel_face_velocity_channels(axis));
                     const unsigned face_valid_mask=Topology_Helper::Face_Valid_Mask(axis); const unsigned face_active_mask=Topology_Helper::Face_Active_Mask(axis);
                     if(flags(offset)&face_valid_mask)  v21_data(offset)=v1_data(offset)-v2_data(offset);}
                 range_iterator.Next();}

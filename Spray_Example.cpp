@@ -7,7 +7,6 @@
 #include <nova/Tools/Grids/Grid_Iterator_Face.h>
 #include <nova/Tools/Krylov_Solvers/Conjugate_Gradient.h>
 #include <nova/Tools/Utilities/File_Utilities.h>
-#include "Apply_Pressure.h"
 #include "Boundary_Value_Initializer.h"
 #include "Uniform_Velocity_Field_Initializer.h"
 #include "Velocity_Field_Traverser.h"
@@ -32,9 +31,16 @@
 #include <chrono>
 
 #include "Alpha_Helper.h"
+#include "Clamp_Alpha_Helper.h"
 #include "Relative_Velocity_Helper.h"
 #include "Compute_Drag_Force_Helper.h"
 #include "Apply_Drag_Force_Helper.h"
+#include "Combination_RHS_Helper.h"
+#include "Poisson_Solver/Poisson_CG_System.h"
+#include "Apply_Combination_Pressure.h"
+#include "Apply_External_Force_Helper.h"
+#include "Check_Velocity_Helper.h"
+#include "Exp_Helper.h"
 
 using namespace std::chrono;
 using namespace Nova;
@@ -51,16 +57,22 @@ Spray_Example()
     level=0;
     rho1=(T)5.;
     rho2=(T)1.;
-    face_velocity1_channels(0)                  = &Struct_type::ch0;
-    face_velocity1_channels(1)                  = &Struct_type::ch1;
-    if(d==3) face_velocity1_channels(2)         = &Struct_type::ch2;
-    face_velocity2_channels(0)                  = &Struct_type::ch3;
-    face_velocity2_channels(1)                  = &Struct_type::ch4;
-    if(d==3) face_velocity2_channels(2)         = &Struct_type::ch5;
-    alpha1_channel                              = &Struct_type::ch6;
-    alpha1_backup_channel                       = &Struct_type::ch7;
-    alpha2_channel                              = &Struct_type::ch8;
-    alpha2_backup_channel                       = &Struct_type::ch9;
+    face_velocity1_channels(0)                          = &Struct_type::ch0;
+    face_velocity1_channels(1)                          = &Struct_type::ch1;
+    if(d==3) face_velocity1_channels(2)                 = &Struct_type::ch2;
+    face_velocity1_backup_channels(0)                   = &Struct_type::ch3;
+    face_velocity1_backup_channels(1)                   = &Struct_type::ch4;
+    if(d==3) face_velocity1_backup_channels(2)          = &Struct_type::ch5;
+
+    face_velocity2_channels(0)                          = &Struct_type::ch6;
+    face_velocity2_channels(1)                          = &Struct_type::ch7;
+    if(d==3) face_velocity2_channels(2)                 = &Struct_type::ch8;
+    face_velocity2_backup_channels(0)                   = &Struct_type::ch9;
+    face_velocity2_backup_channels(1)                   = &Struct_type::ch10;
+    if(d==3) face_velocity2_backup_channels(2)          = &Struct_type::ch11;
+
+    alpha1_channel                                      = &Struct_type::ch12;
+    alpha2_channel                                      = &Struct_type::ch13;
 }
 //######################################################################
 // Initialize
@@ -71,6 +83,11 @@ Initialize()
     diffusion_rt=(T)0.; qc_advection_rt=(T)0.; 
     Initialize_SPGrid();
     Initialize_Fluid_State(test_number);
+
+    const Grid<T,d>& grid=hierarchy->Lattice(level);
+    Log::cout<<"dx: "<<grid.dX<<std::endl;
+    Log::cout<<"resolution: "<<grid.counts<<std::endl;
+    Log::cout<<"domain: "<<grid.domain.min_corner<<", "<<grid.domain.max_corner<<std::endl;
 }
 //######################################################################
 // Initialize_SPGrid
@@ -118,30 +135,35 @@ Limit_Dt(T& dt,const T time)
 template    <class T,int d> void Spray_Example<T,d>::
 Advect_Alpha(const T& dt)
 {
+    Log::cout<<"advecting alpha ..."<<std::endl;
     Channel_Vector cell_velocity_channels;
-    cell_velocity_channels(0)               = &Struct_type::ch10;
-    cell_velocity_channels(1)               = &Struct_type::ch11;
-    if(d==3) cell_velocity_channels(2)      = &Struct_type::ch12;
-    T Struct_type::* temp_channel           = &Struct_type::ch13;
+    cell_velocity_channels(0)               = &Struct_type::ch14;
+    cell_velocity_channels(1)               = &Struct_type::ch15;
+    if(d==3) cell_velocity_channels(2)      = &Struct_type::ch16;
+    T Struct_type::* temp_channel           = &Struct_type::ch17;
     Vector<uint64_t,d> other_face_offsets;
     for(int axis=0;axis<d;++axis) other_face_offsets(axis)=Topology_Helper::Axis_Vector_Offset(axis);
     Uniform_Grid_Averaging_Helper<Struct_type,T,d>::Uniform_Grid_Average_Face_Velocities_To_Cells(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels,cell_velocity_channels,other_face_offsets);
     Uniform_Grid_Advection_Helper<Struct_type,T,d>::Uniform_Grid_Advect_Density(*hierarchy,cell_velocity_channels,alpha1_channel,temp_channel,dt);
     // ensure alpha_air + alpha_water = 1
     Alpha_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,alpha2_channel);
+    Clamp_Alpha_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,alpha2_channel);
 }
 //######################################################################
-// Backup_Alpha
+// Backup_Velocity
 //######################################################################
 template<class T,int d> void Spray_Example<T,d>::
-Backup_Alpha()
+Backup_Velocity()
 {
-    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_backup_channel);
-    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha2_backup_channel);
-    SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,
-                                        alpha1_backup_channel,(unsigned)Cell_Type_Interior);
-    SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha2_channel,
-                                        alpha2_backup_channel,(unsigned)Cell_Type_Interior);
+    Log::cout<<"backing up velocity ..."<<std::endl;
+    for(int axis=0;axis<d;++axis){ 
+        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_backup_channels(axis));
+        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity2_backup_channels(axis));
+        SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels(axis),
+                                        face_velocity1_backup_channels(axis),(unsigned)Topology_Helper::Face_Active_Mask(axis));
+        SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity2_channels(axis),
+                                        face_velocity2_backup_channels(axis),(unsigned)Topology_Helper::Face_Active_Mask(axis));}
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
 //######################################################################
 // Ficks_Diffusion
@@ -149,86 +171,131 @@ Backup_Alpha()
 template<class T,int d> void Spray_Example<T,d>::
 Apply_Drag_Force(const T& dt)
 {
-    enum {number_of_nodes_per_cell  = Topology_Helper::number_of_nodes_per_cell};
-    enum {number_of_nodes_per_face  = Topology_Helper::number_of_nodes_per_face};
-    Channel_Vector interpolated_rel_face_velocity_channels;
-    interpolated_rel_face_velocity_channels(0)                  = &Struct_type::ch10;
-    interpolated_rel_face_velocity_channels(1)                  = &Struct_type::ch11;
-    if(d==3) interpolated_rel_face_velocity_channels(2)         = &Struct_type::ch12;
-    Channel_Vector rel_face_velocity_channels;
-    rel_face_velocity_channels(0)                               = &Struct_type::ch13;
-    rel_face_velocity_channels(1)                               = &Struct_type::ch14;
-    if(d==3) rel_face_velocity_channels(2)                      = &Struct_type::ch15;
-    T Struct_type::* drag_force_channel                         = &Struct_type::ch16;
-    Vector<uint64_t,d> negative_face_offsets; for(int axis=0;axis<d;++axis) negative_face_offsets(axis)=Topology_Helper::Negative_Axis_Vector_Offset(axis);
-    uint64_t nodes_of_cell_offsets[number_of_nodes_per_cell]; Topology_Helper::Nodes_Of_Cell_Offsets(nodes_of_cell_offsets);
-    for(int axis=0;axis<d;++axis) { 
-        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),rel_face_velocity_channels(axis));
-        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),drag_force_channel);
-        // true: 
-        Relative_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels,rel_face_velocity_channels,true);
-        // interpolate velocity at face
-        Uniform_Grid_Averaging_Helper<Struct_type,T,d>::Uniform_Grid_Average_Face_Velocities_To_Faces(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),
-                                                    rel_face_velocity_channels,interpolated_rel_face_velocity_channels,negative_face_offsets,nodes_of_cell_offsets,axis);
-        Compute_Drag_Force_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),drag_force_channel,alpha1_channel,rel_face_velocity_channels,axis);
-        Apply_Drag_Force_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels(axis),drag_force_channel,alpha1_channel,dt,rho1,axis,true);
-    }  
+    Log::cout<<"applying drag force ..."<<std::endl;
+    // enum {number_of_nodes_per_cell                              = Topology_Helper::number_of_nodes_per_cell};
+    // enum {number_of_nodes_per_face                              = Topology_Helper::number_of_nodes_per_face};
+    // Channel_Vector interpolated_rel_face_velocity_channels;
+    // interpolated_rel_face_velocity_channels(0)                  = &Struct_type::ch14;
+    // interpolated_rel_face_velocity_channels(1)                  = &Struct_type::ch15;
+    // if(d==3) interpolated_rel_face_velocity_channels(2)         = &Struct_type::ch16;
+    // Channel_Vector rel_face_velocity_channels;
+    // rel_face_velocity_channels(0)                               = &Struct_type::ch17;
+    // rel_face_velocity_channels(1)                               = &Struct_type::ch18;
+    // if(d==3) rel_face_velocity_channels(2)                      = &Struct_type::ch19;
+    // Channel_Vector drag_force_channels;
+    // drag_force_channels(0)                                      = &Struct_type::ch20;
+    // drag_force_channels(1)                                      = &Struct_type::ch21;
+    // if(d==3) drag_force_channels(2)                             = &Struct_type::ch22;
+    // Vector<uint64_t,d> negative_face_offsets; for(int axis=0;axis<d;++axis) negative_face_offsets(axis)=Topology_Helper::Negative_Axis_Vector_Offset(axis);
+    // uint64_t nodes_of_cell_offsets[number_of_nodes_per_cell]; Topology_Helper::Nodes_Of_Cell_Offsets(nodes_of_cell_offsets);
+    // for(int axis=0;axis<d;++axis) { 
+    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),rel_face_velocity_channels(axis));
+    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),drag_force_channels(axis));
+    //     // false: 
+    //     Relative_Velocity_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels,rel_face_velocity_channels,true);
+    //     // interpolate velocity at face
+    //     Uniform_Grid_Averaging_Helper<Struct_type,T,d>::Uniform_Grid_Average_Face_Velocities_To_Faces(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),
+    //                                                 rel_face_velocity_channels,interpolated_rel_face_velocity_channels,negative_face_offsets,nodes_of_cell_offsets,axis);
+    //     Compute_Drag_Force_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),drag_force_channels(axis),alpha1_channel,interpolated_rel_face_velocity_channels,rho2,axis);
+    // }  
+
+    for(int axis=0;axis<d;++axis)
+        Exp_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels(axis),face_velocity2_channels(axis),alpha1_channel,
+                                    dt,rho1,rho2,axis);
+        // Apply_Drag_Force_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels(axis),face_velocity2_channels(axis),drag_force_channels(axis),alpha1_channel,alpha2_channel,dt,rho1,rho2,axis);
     
 }
+//######################################################################
+// Apply_External_Force
+//######################################################################
+template<class T,int d> void Spray_Example<T,d>::
+Apply_External_Force(const T& dt)
+{
+    Log::cout<<"applying external force ..."<<std::endl;
+    TV gravity=TV::Axis_Vector(1)*(T)-9.8;
+    Apply_External_Force_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels,gravity,dt);
+    Apply_External_Force_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity2_channels,gravity,dt);
+}
+//######################################################################
+// Combination_Project
+//######################################################################
+template<class T,int d> void Spray_Example<T,d>::
+Combination_Project(const T& dt)
+{
+    Log::cout<<"projecting ..."<<std::endl;
+    // set up divergence channel
+    T Struct_type::* rhs_channel            = &Struct_type::ch14;
+    T Struct_type::* pressure_channel       = &Struct_type::ch15;
+
+    Log::cout<<"before clearing ..."<<std::endl;
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
+
+
+    // // clear
+    // for(int level=0;level<levels;++level){
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),pressure_channel);
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),rhs_channel);
+
+    const T one_over_dx=hierarchy->Lattice(level).one_over_dX(0);
+    Array<TV> source_velocity;
+    source_velocity.Append(TV::Axis_Vector(1)*bv);
+    Log::cout<<"before setting boundary ..."<<std::endl;
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
+
+    // set boundary conditions
+    Boundary_Condition_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,pressure_channel,level);
+    Boundary_Condition_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity2_channels,pressure_channel,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity1_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity2_channels,level);
+
+    Log::cout<<"before projecting ..."<<std::endl;
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
+
+
+    Combination_RHS_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),rhs_channel,alpha1_channel,alpha2_channel,face_velocity1_channels,face_velocity2_channels,rho1,rho2,dt,one_over_dx);
+
+    Poisson_CG_System<Struct_type,T,d> cg_system(*hierarchy,alpha1_channel,rho1,rho2,dt);
+
+    T Struct_type::* q_channel              = &Struct_type::ch16;
+    T Struct_type::* r_channel              = &Struct_type::ch17;
+    T Struct_type::* s_channel              = &Struct_type::ch18;
+    T Struct_type::* k_channel              = &Struct_type::ch19;
+    T Struct_type::* z_channel              = &Struct_type::ch19;
+
+    // clear all channels
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),q_channel);
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),r_channel);
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),s_channel);
+    SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),z_channel);
+
+    CG_Vector<Struct_type,T,d> x_V(*hierarchy,pressure_channel);
+    CG_Vector<Struct_type,T,d> b_V(*hierarchy,rhs_channel);
+    CG_Vector<Struct_type,T,d> q_V(*hierarchy,q_channel);
+    CG_Vector<Struct_type,T,d> r_V(*hierarchy,r_channel);
+    CG_Vector<Struct_type,T,d> s_V(*hierarchy,s_channel);
+    CG_Vector<Struct_type,T,d> k_V(*hierarchy,k_channel);
+    CG_Vector<Struct_type,T,d> z_V(*hierarchy,z_channel);
+
+    Conjugate_Gradient<T> cg;
+    cg.print_diagnostics=false; cg.print_residuals=false;
+    cg_system.Multiply(x_V,r_V);
+    r_V-=b_V;
+    const T b_norm=cg_system.Convergence_Norm(r_V);
+    Log::cout<<"Norm: "<<b_norm<<std::endl;
+    cg.restart_iterations=cg_restart_iterations;
+    const T tolerance=std::max((T)1e-10*b_norm,(T)1e-10);
+    cg.Solve(cg_system,x_V,b_V,q_V,s_V,r_V,k_V,z_V,tolerance,0,cg_iterations);
+
+    Apply_Combination_Pressure<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity2_channels,pressure_channel,rho1,one_over_dx);
+    Apply_Combination_Pressure<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels,pressure_channel,rho2,one_over_dx);
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
+}
+
 //######################################################################
 // Ficks_Diffusion
 //######################################################################
 template<class T,int d> void Spray_Example<T,d>::
-Ficks_Diffusion(const T& dt)
-{
-    // using Multigrid_struct_type 	= Multigrid_Data<T>;
-    // Log::cout<<"Fick's Diffusion"<<std::endl;
-	// const Grid<T,d>& grid=hierarchy->Lattice(0);
-    // const T one_over_dx2=Nova_Utilities::Sqr(grid.one_over_dX(0));
-    // const T a=diff_coeff*dt*one_over_dx2; const T two_d_a_plus_one=(T)2*d*a+(T)1.;
-	// if(!explicit_diffusion){
-	//     Ficks_CG_System<Struct_type,Multigrid_struct_type,T,d> cg_system(*hierarchy,mg_levels,diff_coeff*dt,3,1,200);
-    //     T Struct_type::* q_channel              = &Struct_type::ch8;
-    //     T Struct_type::* r_channel              = &Struct_type::ch9;
-    //     T Struct_type::* s_channel              = &Struct_type::ch10;
-    //     T Struct_type::* k_channel              = &Struct_type::ch11;
-    //     T Struct_type::* z_channel              = &Struct_type::ch11;
-    //     T Struct_type::* b_channel              = &Struct_type::ch12;
-    
-    // // clear all channels
-    // for(int level=0;level<levels;++level){
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),q_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),r_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),s_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),z_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),b_channel);}
-
-	//     for(int level=0;level<levels;++level) Ficks_RHS_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),density_channel,b_channel,a);
-	//     for(int level=0;level<levels;++level) SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),density_backup_channel,
-    //                                                                             density_channel,(unsigned)Cell_Type_Interior);
-    //     CG_Vector<Struct_type,T,d> x_V(*hierarchy,density_channel),b_V(*hierarchy,b_channel),q_V(*hierarchy,q_channel),
-    //                                 s_V(*hierarchy,s_channel),r_V(*hierarchy,r_channel),k_V(*hierarchy,k_channel),z_V(*hierarchy,z_channel);   
-	//     Conjugate_Gradient<T> cg;
-    //     cg.iterations_used=new int;
-    //     cg_system.Multiply(x_V,r_V);
-    //     r_V-=b_V;
-    //     const T b_norm=cg_system.Convergence_Norm(r_V);
-    //     Log::cout<<"Norm: "<<b_norm<<std::endl;
-    //     cg.print_residuals=false;
-    //     cg.print_diagnostics=true;
-    //     cg.restart_iterations=cg_restart_iterations;
-    //     const T tolerance=std::max((T)1e-4*b_norm,(T)1e-4);
-    //     cg.Solve(cg_system,x_V,b_V,q_V,s_V,r_V,k_V,z_V,tolerance,0,cg_iterations);
-    //     iteration_counter+=*(cg.iterations_used);
-    //     for(int level=0;level<levels;++level) Density_Clamp_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),density_channel);}
-    // else{
-    //     T Struct_type::* lap_density_channel    = &Struct_type::ch8;
-    //     for(int level=0;level<levels;++level) SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),lap_density_channel);
-    //     for(int level=0;level<levels;++level) Lap_Calculator<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),density_backup_channel,lap_density_channel,one_over_dx2);        
-    //     for(int level=0;level<levels;++level) SPGrid::Masked_Saxpy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),dt,lap_density_channel,density_backup_channel,density_channel,Cell_Type_Interior);
-    //     for(int level=0;level<levels;++level) Density_Clamp_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),density_channel);}
-    //     Log::cout<<"Fick's Diffusion finished"<<std::endl;
-}
+Ficks_Diffusion(const T& dt){}
 //######################################################################
 // Modify_Density_With_Sources
 //######################################################################
@@ -240,8 +307,10 @@ Modify_Density_With_Sources(){}
 template<class T,int d> void Spray_Example<T,d>::
 Add_Source(const T& dt)
 {
-    // for(int level=0;level<levels;++level)
-    //     Source_Adder<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),density_channel,density_sources,source_rate,dt,level);
+    Log::cout<<"adding source ..."<<std::endl;
+    Source_Adder<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),alpha1_channel,density_sources,source_rate,dt,level);
+    Alpha_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,alpha2_channel);
+    Clamp_Alpha_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,alpha2_channel);
 }
 //######################################################################
 // Advect_Face_Velocities
@@ -249,29 +318,30 @@ Add_Source(const T& dt)
 template<class T,int d> void Spray_Example<T,d>::
 Advect_Face_Velocities(const T& dt)
 {
+    Log::cout<<"advecting face velocities ..."<<std::endl;
     Channel_Vector interpolated_face_velocity_channels;
-    interpolated_face_velocity_channels(0)              = &Struct_type::ch8;
-    interpolated_face_velocity_channels(1)              = &Struct_type::ch9;
-    if(d==3) interpolated_face_velocity_channels(2)     = &Struct_type::ch10;
+    interpolated_face_velocity_channels(0)              = &Struct_type::ch14;
+    interpolated_face_velocity_channels(1)              = &Struct_type::ch15;
+    if(d==3) interpolated_face_velocity_channels(2)     = &Struct_type::ch16;
     Channel_Vector face_velocity_backup_channels;
-    face_velocity_backup_channels(0)                    = &Struct_type::ch11;
-    face_velocity_backup_channels(1)                    = &Struct_type::ch12;
-    if(d==3) face_velocity_backup_channels(2)           = &Struct_type::ch13;
-    T Struct_type::* temp_channel                       = &Struct_type::ch14;
+    face_velocity_backup_channels(0)                    = &Struct_type::ch17;
+    face_velocity_backup_channels(1)                    = &Struct_type::ch18;
+    if(d==3) face_velocity_backup_channels(2)           = &Struct_type::ch19;
+    T Struct_type::* temp_channel                       = &Struct_type::ch20;
     // phase 1
     // backup face velocity
-    for(int level=0;level<levels;++level) for(int axis=0;axis<d;++axis) {
-        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity_backup_channels(axis));
+    for(int axis=0;axis<d;++axis) { SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity_backup_channels(axis));
         SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels(axis),
-                                                face_velocity_backup_channels(axis),Topology_Helper::Face_Active_Mask(axis));}  
-        Uniform_Grid_Advection_Helper<Struct_type,T,d>::Uniform_Grid_Advect_Face_Velocities(*hierarchy,face_velocity1_channels,face_velocity_backup_channels,interpolated_face_velocity_channels,temp_channel,dt);
+                                            face_velocity_backup_channels(axis),Topology_Helper::Face_Active_Mask(axis));}  
+    Uniform_Grid_Advection_Helper<Struct_type,T,d>::Uniform_Grid_Advect_Face_Velocities(*hierarchy,face_velocity1_channels,face_velocity_backup_channels,interpolated_face_velocity_channels,temp_channel,dt);
     // phase 2
     // backup face velocity
-    for(int level=0;level<levels;++level) for(int axis=0;axis<d;++axis) {
-        SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity_backup_channels(axis));
+    for(int axis=0;axis<d;++axis) { SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity_backup_channels(axis));
         SPGrid::Masked_Copy<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity2_channels(axis),
-                                                face_velocity_backup_channels(axis),Topology_Helper::Face_Active_Mask(axis));}  
-        Uniform_Grid_Advection_Helper<Struct_type,T,d>::Uniform_Grid_Advect_Face_Velocities(*hierarchy,face_velocity2_channels,face_velocity_backup_channels,interpolated_face_velocity_channels,temp_channel,dt);
+                                            face_velocity_backup_channels(axis),Topology_Helper::Face_Active_Mask(axis));}  
+    Uniform_Grid_Advection_Helper<Struct_type,T,d>::Uniform_Grid_Advect_Face_Velocities(*hierarchy,face_velocity2_channels,face_velocity_backup_channels,interpolated_face_velocity_channels,temp_channel,dt);
+
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
 //######################################################################
 // Set_Neumann_Faces_Inside_Sources
@@ -298,75 +368,18 @@ Set_Neumann_Faces_Inside_Sources()
 template<class T,int d> void Spray_Example<T,d>::
 Initialize_Velocity_Field()
 {
+    Log::cout<<"initializing velocity_field ..."<<std::endl;
     Array<TV> source_velocity;
     source_velocity.Append(TV::Axis_Vector(1)*bv);
-    for(int level=0;level<levels;++level)
-        if(uvf)Uniform_Velocity_Field_Initializer<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,bv,level);
-        else Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity1_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity1_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity2_channels,level);
+    // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
 //######################################################################
 // Project
 //######################################################################
 template<class T,int d> void Spray_Example<T,d>::
-Project()
-{
-    // using Multigrid_struct_type             = Multigrid_Data<T>;
-    // using Hierarchy_Projection              = Grid_Hierarchy_Projection<Struct_type,T,d>;
-
-    // // set up divergence channel
-    // T Struct_type::* divergence_channel     = &Struct_type::ch8;
-    // T Struct_type::* pressure_channel       = &Struct_type::ch9;
-
-    // // clear
-    // for(int level=0;level<levels;++level){
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),pressure_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),divergence_channel);}
-
-    // Array<TV> source_velocity;
-    // source_velocity.Append(TV::Axis_Vector(1)*bv);
-    // // set boundary conditions
-    // for(int level=0;level<levels;++level){Boundary_Condition_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity_channels,pressure_channel,level);
-    //    if(!uvf) Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity_channels,level);}
-        
-    // // compute divergence
-    // Hierarchy_Projection::Compute_Divergence(*hierarchy,face_velocity_channels,divergence_channel);
-
-    // Poisson_CG_System<Struct_type,Multigrid_struct_type,T,d> cg_system(*hierarchy,mg_levels,3,1,200);
-
-    // T Struct_type::* q_channel              = &Struct_type::ch10;
-    // T Struct_type::* r_channel              = &Struct_type::ch11;
-    // T Struct_type::* s_channel              = &Struct_type::ch12;
-    // T Struct_type::* k_channel              = &Struct_type::ch12;
-    // T Struct_type::* z_channel              = &Struct_type::ch13;
-
-    // // clear all channels
-    // for(int level=0;level<levels;++level){
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),q_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),r_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),s_channel);
-    //     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),z_channel);}
-
-    // CG_Vector<Struct_type,T,d> x_V(*hierarchy,pressure_channel);
-    // CG_Vector<Struct_type,T,d> b_V(*hierarchy,divergence_channel);
-    // CG_Vector<Struct_type,T,d> q_V(*hierarchy,q_channel);
-    // CG_Vector<Struct_type,T,d> r_V(*hierarchy,r_channel);
-    // CG_Vector<Struct_type,T,d> s_V(*hierarchy,s_channel);
-    // CG_Vector<Struct_type,T,d> k_V(*hierarchy,k_channel);
-    // CG_Vector<Struct_type,T,d> z_V(*hierarchy,z_channel);
-
-    // Conjugate_Gradient<T> cg;
-    // cg.print_diagnostics=false; cg.print_residuals=false;
-    // cg_system.Multiply(x_V,r_V);
-    // r_V-=b_V;
-    // const T b_norm=cg_system.Convergence_Norm(r_V);
-    // Log::cout<<"Norm: "<<b_norm<<std::endl;
-    // cg.restart_iterations=cg_restart_iterations;
-    // const T tolerance=std::max((T)1e-4*b_norm,(T)1e-4);
-    // cg.Solve(cg_system,x_V,b_V,q_V,s_V,r_V,k_V,z_V,tolerance,0,cg_iterations);
-
-    // for(int level=0;level<levels;++level)
-    //     Apply_Pressure<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity_channels,pressure_channel,level);
-}
+Project(){}
 //######################################################################
 // Register_Options
 //######################################################################
@@ -426,7 +439,7 @@ Parse_Options()
     cg_tolerance=(T)parse_args->Get_Double_Value("-cg_tolerance");
     if(nd){diff_coeff=(T)0.;tau=(T)1.;Fc=(T)0.;}
     switch (test_number){
-    case 1:{const_source=false;const_alpha1_value=(T)0.;uvf=false;}break;
+    case 1:{const_source=false;const_alpha1_value=(T)1.e-3;uvf=false;}break;
     case 2:{const_source=true;const_alpha1_value=(T)1.;uvf=false;}break;
     case 3:{const_source=false;const_alpha1_value=(T)0.;uvf=false;}break;
     case 4:{const_source=true;const_alpha1_value=(T)1.;uvf=false;}break;
@@ -448,6 +461,9 @@ Write_Output_Files(const int frame) const
     File_Utilities::Write_To_Text_File(output_directory+"/"+std::to_string(frame)+"/levels",levels);
     hierarchy->Write_Hierarchy(output_directory,frame);
     hierarchy->template Write_Channel<T>(output_directory+"/"+std::to_string(frame)+"/spgrid_density",alpha1_channel);
+    hierarchy->template Write_Channel<T>(output_directory+"/"+std::to_string(frame)+"/spgrid_u",face_velocity1_channels(0));
+    hierarchy->template Write_Channel<T>(output_directory+"/"+std::to_string(frame)+"/spgrid_v",face_velocity1_channels(1));
+    if(d==3) hierarchy->template Write_Channel<T>(output_directory+"/"+std::to_string(frame)+"/spgrid_w",face_velocity1_channels(2));
 }
 //######################################################################
 // Read_Output_Files

@@ -19,7 +19,7 @@
 #include "plugins/Simulation/Simulation_Renderable.h"
 
 #include "Viewer_Data.h"
-// #include "../Poisson_Solver/Grid_Hierarchy_Projection.h"
+#include "../Poisson_Solver/Grid_Hierarchy_Projection.h"
 
 #include <boost/filesystem.hpp>
 namespace fs = boost::filesystem;
@@ -41,7 +41,7 @@ class Autonomous_Navigation_Renderable: public Simulation_Renderable<T,d>
     using Flag_array_mask                   = typename Allocator_type::template Array_mask<unsigned>;
     using Topology_Helper                   = Grid_Topology_Helper<Flag_array_mask>;
     using T_Range_Iterator                  = Range_Iterator<d,T_INDEX>;
-    // using Hierarchy_Projection              = Grid_Hierarchy_Projection<Struct_type,T,d>;
+    using Hierarchy_Projection              = Grid_Hierarchy_Projection<Struct_type,T,d>;
 
     using Base::directory_name;using Base::active_frame;using Base::_app;
 
@@ -102,8 +102,8 @@ class Autonomous_Navigation_Renderable: public Simulation_Renderable<T,d>
 
   public:
     Autonomous_Navigation_Renderable(ApplicationFactory& app,const std::string& directory_name,int max_frame)
-        :Base(app,directory_name,max_frame),hierarchy(nullptr),elements_per_block(0),levels(0),draw_density(false),
-        draw_velocity(false),draw_voxels(false)
+        :Base(app,directory_name,max_frame),hierarchy(nullptr),elements_per_block(0),levels(0),draw_density(true),
+        draw_velocity(true),draw_voxels(true)
     {
         std::istream *input=(d==3)?File_Utilities::Safe_Open_Input(directory_name+"/common/hierarchy.struct3d"):File_Utilities::Safe_Open_Input(directory_name+"/common/hierarchy.struct2d");
         Read_Write<int>::Read(*input,levels);
@@ -270,7 +270,7 @@ class Autonomous_Navigation_Renderable: public Simulation_Renderable<T,d>
         if(draw_velocity){
             for(int level=0;level<levels;++level)
                 SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),divergence_channel);
-            // Hierarchy_Projection::Compute_Divergence(*hierarchy,face_velocity_channels,divergence_channel);
+                Hierarchy_Projection::Compute_Divergence(*hierarchy,face_velocity_channels,divergence_channel);
             }
 
         Initialize_Buffers();

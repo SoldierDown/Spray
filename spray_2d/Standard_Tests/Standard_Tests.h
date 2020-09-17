@@ -14,6 +14,8 @@
 #include "../../Rasterizers/Adaptive_Sphere_Rasterizer.h"
 #include "../../Rasterizers/Randomized_Rasterizer.h"
 
+#include "../../Clamp_Alpha_Helper.h"
+
 namespace Nova{
 template<class T,int d>
 class Standard_Tests: public Spray_Example<T,d>
@@ -33,8 +35,8 @@ class Standard_Tests: public Spray_Example<T,d>
     using Base::cfl;    using Base::velocity_sources;   using Base::density_sources;    
     using Base::alpha1_channel;                         using Base::alpha2_channel;
     using Base::nd;     using Base::FICKS;              using Base::diff_coeff;         using Base::Fc;             
-    using Base::tau;    using Base::bv;                 using Base::source_rate;
-    using Base::uvf;    using Base::const_alpha1_value;                                 using Base::const_source;
+    using Base::tau;    using Base::bv;                 using Base::source_rate;        using Base::uvf;    
+    using Base::const_alpha1_value;                     using Base::const_source;
     using Base::explicit_diffusion;
     /****************************
      * example explanation:
@@ -83,9 +85,11 @@ class Standard_Tests: public Spray_Example<T,d>
 
                 for(int e=0;e<Flag_array_mask::elements_per_block;++e,offset+=sizeof(Flags_type)){
                     const T_INDEX index=base_index+range_iterator.Index();
-                    if(flags(offset)&Cell_Type_Interior && density_sources(0)->Inside(hierarchy->Lattice(level).Center(index))) 
-                    {alpha1_data(offset)=const_alpha1_value; alpha2_data(offset)=(T)1.-const_alpha1_value;}
+                    if(flags(offset)&Cell_Type_Interior) {alpha1_data(offset)=const_alpha1_value; alpha2_data(offset)=(T)1.-const_alpha1_value;}
                     range_iterator.Next();}}}
+        const int level=0;
+        // Clamp_Alpha_Helper<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),alpha1_channel,alpha2_channel);
+        
     }
 //######################################################################
     void Initialize_Sources(const int test_number) override

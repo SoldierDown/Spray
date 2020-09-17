@@ -31,7 +31,7 @@ Initialize()
 
     example.Initialize_Velocity_Field();
     // divergence free
-    if(!example.uvf) example.Project();
+    example.Combination_Project(1e-5);
 }
 //######################################################################
 // Advance_One_Time_Step_Explicit_Part
@@ -39,13 +39,13 @@ Initialize()
 template<class T,int d> void Spray_Driver<T,d>::
 Advance_One_Time_Step_Explicit_Part(const T dt,const T time)
 {
-    example.Backup_Alpha();
+    example.Backup_Velocity(); 
     example.Advect_Alpha(dt);
-    if(example.const_source) example.Modify_Density_With_Sources();
-    else example.Add_Source(dt);
+    example.Add_Source(dt);
+    // example.Apply_External_Force(dt);
+    example.Apply_Drag_Force(dt);
     // convect
-    if(!example.uvf) example.Advect_Face_Velocities(dt);
-
+    example.Advect_Face_Velocities(dt);
 }
 //######################################################################
 // Advance_One_Time_Step_Implicit_Part
@@ -54,7 +54,7 @@ template<class T,int d> void Spray_Driver<T,d>::
 Advance_One_Time_Step_Implicit_Part(const T dt,const T time)
 {
     high_resolution_clock::time_point tb=high_resolution_clock::now();
-    if(!example.uvf) example.Project();
+    example.Combination_Project(dt);
     high_resolution_clock::time_point te=high_resolution_clock::now();
     projection_rt+=duration_cast<duration<T>>(te-tb).count();
 }
@@ -70,7 +70,9 @@ Advance_To_Target_Time(const T target_time)
         Log::Scope scope("SUBSTEP","substep "+std::to_string(substep));
         substep_counter++;
         T dt=Compute_Dt(time,target_time);
-        if(example.explicit_diffusion) dt/=(T)100.;
+        // if(example.explicit_diffusion) dt/=(T)100.;
+        // dt/=(T)10.;
+        // dt=(T)1e-3;
         Example<T,d>::Clamp_Time_Step_With_Target_Time(time,target_time,dt,done);
         Advance_One_Time_Step_Explicit_Part(dt,time);
         Advance_One_Time_Step_Implicit_Part(dt,time);

@@ -1,10 +1,10 @@
 //!#####################################################################
-//! \file Alpha_Helper.h
+//! \file Clamp_Alpha_Helper.h
 //!#####################################################################
-// Class Alpha_Helper
+// Class Clamp_Alpha_Helper
 //######################################################################
-#ifndef __Alpha_Helper__
-#define __Alpha_Helper__
+#ifndef __Clamp_Alpha_Helper__
+#define __Clamp_Alpha_Helper__
 
 #include <nova/SPGrid/Core/SPGrid_Allocator.h>
 #include <nova/SPGrid/Tools/SPGrid_Threading_Helper.h>
@@ -13,7 +13,7 @@
 
 namespace Nova{
 template<class Struct_type,class T,int d>
-class Alpha_Helper
+class Clamp_Alpha_Helper
 {
     using Flags_type            = typename Struct_type::Flags_type;
     using Channel_Vector        = Vector<T Struct_type::*,d>;
@@ -22,27 +22,28 @@ class Alpha_Helper
     using Topology_Helper       = Grid_Topology_Helper<Flag_array_mask>;
 
   public:
-    Alpha_Helper(Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
+    Clamp_Alpha_Helper(Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
                 T Struct_type::* alpha1_channel,T Struct_type::* alpha2_channel)
     {Run(allocator,blocks,alpha1_channel,alpha2_channel);}
 
     void Run(Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
                 T Struct_type::* alpha1_channel,T Struct_type::* alpha2_channel) const
     {
-        auto alpha1=allocator.template Get_Const_Array<Struct_type,T>(alpha1_channel);
-        auto alpha2=allocator.template Get_Array<Struct_type,T>(alpha2_channel);
+        Log::cout<<"clamping ..."<<std::endl;
+        auto alpha1_data=allocator.template Get_Array<Struct_type,T>(alpha1_channel);
+        auto alpha2_data=allocator.template Get_Array<Struct_type,T>(alpha2_channel);
         auto flags=allocator.template Get_Const_Array<Struct_type,unsigned>(&Struct_type::flags);
-        auto alpha_helper=[&](uint64_t offset)
+        auto clamp_alpha_helper=[&](uint64_t offset)
         {
             for(int e=0;e<Flag_array_mask::elements_per_block;++e,offset+=sizeof(Flags_type))
-                if(flags(offset)&Cell_Type_Interior) {
-                    alpha2(offset)=(T)1.-alpha1(offset);
-                    if(std::isnan(alpha1(offset))) {Log::cout<<"NAN alpha1 in Alpha_Helper"<<std::endl;exit(0);}
-                    if(std::isnan(alpha2(offset))) {Log::cout<<"NAN alpha2 in Alpha_Helper"<<std::endl;exit(0);}
-
+                if(flags(offset)&Cell_Type_Interior) { 
+                    const T threshold=(T)1.e-3; const T alpha1=alpha1_data(offset); const T alpha2=alpha2_data(offset);
+                    // if((alpha1+alpha2)!=(T)1.) Log::cout<<"alpha1 + alpha2 != 1: "<<alpha1<<","<<alpha2<<std::endl;
+                    if(alpha1<threshold){alpha1_data(offset)=threshold;alpha2_data(offset)=(T)1.-threshold;}
+                    else if(alpha2<threshold){alpha2_data(offset)=threshold; alpha1_data(offset)=(T)1.-threshold;}
                 }
         };
-        SPGrid_Computations::Run_Parallel_Blocks(blocks,alpha_helper);
+        SPGrid_Computations::Run_Parallel_Blocks(blocks,clamp_alpha_helper);
     }
 
 };
