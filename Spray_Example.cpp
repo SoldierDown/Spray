@@ -55,7 +55,7 @@ Spray_Example()
     :Base(),hierarchy(nullptr),rasterizer(nullptr)
 {
     level=0;
-    rho1=(T)5.;
+    rho1=(T)10.;
     rho2=(T)1.;
     face_velocity1_channels(0)                          = &Struct_type::ch0;
     face_velocity1_channels(1)                          = &Struct_type::ch1;
@@ -290,17 +290,6 @@ Combination_Project(const T& dt)
     Apply_Combination_Pressure<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),face_velocity1_channels,pressure_channel,rho2,one_over_dx);
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
-
-//######################################################################
-// Ficks_Diffusion
-//######################################################################
-template<class T,int d> void Spray_Example<T,d>::
-Ficks_Diffusion(const T& dt){}
-//######################################################################
-// Modify_Density_With_Sources
-//######################################################################
-template<class T,int d> void Spray_Example<T,d>::
-Modify_Density_With_Sources(){}
 //######################################################################
 // Add_Source
 //######################################################################
@@ -376,11 +365,6 @@ Initialize_Velocity_Field()
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
 //######################################################################
-// Project
-//######################################################################
-template<class T,int d> void Spray_Example<T,d>::
-Project(){}
-//######################################################################
 // Register_Options
 //######################################################################
 template<class T,int d> void Spray_Example<T,d>::
@@ -395,14 +379,10 @@ Register_Options()
     parse_args->Add_Integer_Argument("-threads",1,"Number of threads for OpenMP to use");
     if(d==2) parse_args->Add_Vector_2D_Argument("-size",Vector<double,2>(64.),"n","Grid resolution");
     else if(d==3) parse_args->Add_Vector_3D_Argument("-size",Vector<double,3>(64.),"n","Grid resolution");
-    parse_args->Add_Double_Argument("-diff_coeff",(T)1e-3,"diffusion coefficient.");
-    parse_args->Add_Double_Argument("-fc",(T)0.,"fc.");
     parse_args->Add_Double_Argument("-bv",(T)1.,"Background velocity(along y axis).");
+    parse_args->Add_Double_Argument("-rho1",(T)10.,"rho1.");
+    parse_args->Add_Double_Argument("-rho2",(T)1.,"rho2.");
     parse_args->Add_Double_Argument("-sr",(T)1.,"Source rate");
-    parse_args->Add_Double_Argument("-tau",(T)1.,"tau.");
-    parse_args->Add_Option_Argument("-ficks","Fick's diffusion.");
-    parse_args->Add_Option_Argument("-nd","Turn off diffusion");
-    parse_args->Add_Option_Argument("-ed","Explicit diffusion");
     parse_args->Add_Option_Argument("-uvf","Uniform velocity field");
     // for CG
     parse_args->Add_Integer_Argument("-cg_iterations",100,"Number of CG iterations.");
@@ -425,19 +405,14 @@ Parse_Options()
     omp_set_num_threads(number_of_threads);
     if(d==2){auto cell_counts_2d=parse_args->Get_Vector_2D_Value("-size");for(int v=0;v<d;++v) counts(v)=cell_counts_2d(v);}
     else{auto cell_counts_3d=parse_args->Get_Vector_3D_Value("-size");for(int v=0;v<d;++v) counts(v)=cell_counts_3d(v);}
-    diff_coeff=parse_args->Get_Double_Value("-diff_coeff");
     bv=parse_args->Get_Double_Value("-bv");
+    rho1=parse_args->Get_Double_Value("-rho1");
+    rho2=parse_args->Get_Double_Value("-rho2");
     source_rate=parse_args->Get_Double_Value("-sr");
-    Fc=parse_args->Get_Double_Value("-fc");
-    tau=parse_args->Get_Double_Value("-tau");
-    FICKS=parse_args->Get_Option_Value("-ficks");
     uvf=parse_args->Get_Option_Value("-uvf");
-    nd=parse_args->Get_Option_Value("-nd");
-    explicit_diffusion=parse_args->Get_Option_Value("-ed");
     cg_iterations=parse_args->Get_Integer_Value("-cg_iterations");
     cg_restart_iterations=parse_args->Get_Integer_Value("-cg_restart_iterations");
     cg_tolerance=(T)parse_args->Get_Double_Value("-cg_tolerance");
-    if(nd){diff_coeff=(T)0.;tau=(T)1.;Fc=(T)0.;}
     switch (test_number){
     case 1:{const_source=false;const_alpha1_value=(T)1.e-3;uvf=false;}break;
     case 2:{const_source=true;const_alpha1_value=(T)1.;uvf=false;}break;

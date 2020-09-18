@@ -32,20 +32,15 @@ class Spray_Example: public Example<T,d>
     using Base::frame_title;using Base::output_directory;using Base::parse_args;using Base::first_frame;
     int test_number;
     int iteration_counter;
-    bool nd;
     bool const_source;
     T const_alpha1_value;
     T diffusion_rt=(T)0.;
     T qc_advection_rt=(T)0.;
     T qc_update_rt=(T)0.;
-    bool FICKS;
     bool explicit_diffusion;
     bool uvf;
     T source_rate;
     T bv;
-    T diff_coeff;
-    T Fc;
-    T tau;
     T_INDEX counts;
     int level,levels,mg_levels,cg_iterations,cg_restart_iterations;
     T cfl,cg_tolerance;
@@ -53,8 +48,12 @@ class Spray_Example: public Example<T,d>
     Hierarchy_Rasterizer *rasterizer;
 
 
+    bool use_wall;
+    Array<Implicit_Object<T,d>*> inner_wall;
+
     T rho1;
     T rho2;
+
 
     T Struct_type::* alpha1_channel;
     T Struct_type::* alpha2_channel;
@@ -78,20 +77,17 @@ class Spray_Example: public Example<T,d>
     virtual void Initialize_Fluid_State(const int test_number)=0;
     virtual void Initialize_Sources(const int test_number)=0;
 //######################################################################
-    void Initialize();
-    void Initialize_SPGrid();
+
     void Limit_Dt(T& dt,const T time) override;
 
-    void Ficks_Diffusion(const T& dt);
-    void Modify_Density_With_Sources();
-    void Add_Source(const T& dt);
     void Set_Neumann_Faces_Inside_Sources();
-    void Initialize_Velocity_Field();
-    void Project();
-    void Register_Options() override;
-    void Parse_Options() override;
+
 
     // Spray
+    void Initialize();
+    void Initialize_Velocity_Field();    
+    void Initialize_SPGrid();
+    void Add_Source(const T& dt);
     void Advect_Alpha(const T& dt);
     void Advect_Face_Vector(const T& dt);
     void Backup_Velocity();
@@ -100,7 +96,9 @@ class Spray_Example: public Example<T,d>
     void Apply_External_Force(const T& dt);
     void Combination_Project(const T& dt);
 
-    void Read_Output_Files(const int& frame);
+    void Read_Output_Files(const int& frame);    
+    void Register_Options() override;
+    void Parse_Options() override;
     void Write_Output_Files(const int frame) const override;
     void Wrtie_To_File(const int& frame);
 //######################################################################

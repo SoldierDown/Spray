@@ -71,7 +71,7 @@ Advance_To_Target_Time(const T target_time)
         substep_counter++;
         T dt=Compute_Dt(time,target_time);
         // if(example.explicit_diffusion) dt/=(T)100.;
-        // dt/=(T)10.;
+        dt/=(T)10.;
         // dt=(T)1e-3;
         Example<T,d>::Clamp_Time_Step_With_Target_Time(time,target_time,dt,done);
         Advance_One_Time_Step_Explicit_Part(dt,time);
