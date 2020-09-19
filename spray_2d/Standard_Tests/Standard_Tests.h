@@ -31,12 +31,15 @@ class Standard_Tests: public Spray_Example<T,d>
     using Flag_array_mask           = typename Allocator_type::template Array_mask<unsigned>;
 
   public:
-    using Base::output_directory; using Base::test_number;using Base::counts;using Base::levels;using Base::domain_walls;using Base::hierarchy;using Base::rasterizer;
-    using Base::cfl;    using Base::velocity_sources;   using Base::density_sources;    using Base::inner_wall;
-    using Base::rho1;   using Base::rho2;
-    using Base::alpha1_channel;                         using Base::alpha2_channel;       
-    using Base::bv;                                     using Base::source_rate;        using Base::uvf;    
-    using Base::const_alpha1_value;                     using Base::const_source;       using Base::use_wall;
+    using Base::output_directory;       using Base::test_number;            using Base::counts; 
+    using Base::levels;                 using Base::domain_walls;           using Base::hierarchy;
+    using Base::rasterizer;             using Base::cfl;                    using Base::domain;
+    using Base::velocity1_sources;      using Base::velocity2_sources;      using Base::use_wall;
+    using Base::density_sources;        using Base::inner_wall;
+    using Base::rho1;                   using Base::rho2;                   
+    using Base::alpha1_channel;         using Base::alpha2_channel;       
+    using Base::source_rate;            using Base::uvf;    
+    using Base::const_alpha1_value;     using Base::const_source;           
     using Base::explicit_diffusion;
     /****************************
      * example explanation:
@@ -52,9 +55,10 @@ class Standard_Tests: public Spray_Example<T,d>
     void Parse_Options() override
     {
         Base::Parse_Options();
-        output_directory="Spray_2d_rho1_"+std::to_string(rho1)+"_rho2_"+std::to_string(rho2)+"_case_"+std::to_string(test_number)+"_bv_"+std::to_string(bv)+(const_source?"":"_sr_"+std::to_string(source_rate))+"_Resolution_"+std::to_string(counts(0))+"x"+std::to_string(counts(1));
+        output_directory="Spray_2d_rho1_"+std::to_string(rho1)+"_rho2_"+std::to_string(rho2)+"_case_"+std::to_string(test_number)+"_sr_"+std::to_string(source_rate)+"_Resolution_"+std::to_string(counts(0))+"x"+std::to_string(counts(1));
         for(int axis=0;axis<d;++axis) for(int side=0;side<2;++side) domain_walls(axis)(side)=false;
-        TV min_corner,max_corner=TV(4.); max_corner(1)=(T)8.;
+        TV min_corner,max_corner=domain;
+        Log::cout<<"domain: "<<domain<<", resolution: "<<counts<<std::endl;
         hierarchy=new Hierarchy(counts,Range<T,d>(min_corner,max_corner),levels);
     }
 //######################################################################
@@ -92,7 +96,7 @@ class Standard_Tests: public Spray_Example<T,d>
 //######################################################################
     void Initialize_Sources(const int test_number) override
     {
-        const T cell_width=(T)4./counts(0);
+        const T cell_width=domain(0)/counts(0);
         switch (test_number)
         {
         // test case 1: density&velocity source near the bottom 
@@ -104,12 +108,9 @@ class Standard_Tests: public Spray_Example<T,d>
 
             TV velocity_min_corner=TV({(T)1.8,(T)0.}),velocity_max_corner=TV({(T)2.2,(T)2.*cell_width});
             Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
-            velocity_sources.Append(velocity_obj);
+            velocity1_sources.Append(velocity_obj);
             
-            if(use_wall){
-            TV velocity_min_corner=TV({(T)1.8,(T)0.}),velocity_max_corner=TV({(T)2.2,(T)2.*cell_width});
-            Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
-            velocity_sources.Append(velocity_obj);}
+            if(use_wall){}
             }break;
         case 3:
         case 4:{
@@ -118,7 +119,7 @@ class Standard_Tests: public Spray_Example<T,d>
             density_sources.Append(density_obj);
             TV velocity_min_corner=TV({(T)1.8,(T)0.}),velocity_max_corner=TV({(T)2.2,(T)2.*cell_width});
             Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
-            velocity_sources.Append(velocity_obj);
+            velocity1_sources.Append(velocity_obj);
         }break;
         case 5:
         case 6:
@@ -129,8 +130,16 @@ class Standard_Tests: public Spray_Example<T,d>
             density_sources.Append(density_obj);
             TV velocity_min_corner=TV({(T)2.-cell_width,(T)2.-cell_width}),velocity_max_corner=TV({(T)2.+cell_width,(T)2.+cell_width});
             Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
-            velocity_sources.Append(velocity_obj);}break;}
+            velocity1_sources.Append(velocity_obj);}break;
+        case 9:{
+            TV density_min_corner=TV({(T)6.4,(T)4.-(T)2.*cell_width}),density_max_corner=TV({(T)6.8,(T)4.});
+            Implicit_Object<T,d>* density_obj=new Box_Implicit_Object<T,d>(density_min_corner,density_max_corner);
+            density_sources.Append(density_obj);
 
+            TV velocity_min_corner=TV({(T)8.-(T)2.*cell_width,(T)0.}),velocity_max_corner=TV({(T)8.,(T)4.});
+            Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
+            velocity1_sources.Append(velocity_obj);
+        }break;}
 
     }
 //######################################################################

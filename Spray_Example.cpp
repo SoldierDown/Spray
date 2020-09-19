@@ -55,8 +55,8 @@ Spray_Example()
     :Base(),hierarchy(nullptr),rasterizer(nullptr)
 {
     level=0;
-    rho1=(T)10.;
-    rho2=(T)1.;
+    init_v1=TV({0.,-1.});   init_v2=TV({-5.,0.});
+    rho1=(T)10.;            rho2=(T)1.;
     face_velocity1_channels(0)                          = &Struct_type::ch0;
     face_velocity1_channels(1)                          = &Struct_type::ch1;
     if(d==3) face_velocity1_channels(2)                 = &Struct_type::ch2;
@@ -237,16 +237,17 @@ Combination_Project(const T& dt)
     SPGrid::Clear<Struct_type,T,d>(hierarchy->Allocator(level),hierarchy->Blocks(level),rhs_channel);
 
     const T one_over_dx=hierarchy->Lattice(level).one_over_dX(0);
-    Array<TV> source_velocity;
-    source_velocity.Append(TV::Axis_Vector(1)*bv);
+    Array<TV> source_velocity1;         Array<TV> source_velocity2;
+    source_velocity1.Append(init_v1);   source_velocity2.Append(init_v2);
+    
     Log::cout<<"before setting boundary ..."<<std::endl;
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 
     // set boundary conditions
     Boundary_Condition_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,pressure_channel,level);
     Boundary_Condition_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity2_channels,pressure_channel,level);
-    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity1_channels,level);
-    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity2_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity1_sources,source_velocity1,face_velocity1_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity2_sources,source_velocity2,face_velocity2_channels,level);
 
     Log::cout<<"before projecting ..."<<std::endl;
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
@@ -338,18 +339,18 @@ Advect_Face_Velocities(const T& dt)
 template<class T,int d> void Spray_Example<T,d>::
 Set_Neumann_Faces_Inside_Sources()
 {
-    for(int level=0;level<levels;++level){
-        auto flags=hierarchy->Allocator(level).template Get_Array<Struct_type,unsigned>(&Struct_type::flags);
-        for(Grid_Iterator_Face<T,d> iterator(hierarchy->Lattice(level));iterator.Valid();iterator.Next()){
-            const int axis=iterator.Axis();const T_INDEX& face_index=iterator.Face_Index();
-            uint64_t face_offset=Flag_array_mask::Linear_Offset(face_index._data);
-            const uint64_t face_active_mask=Topology_Helper::Face_Active_Mask(axis);
-            const uint64_t face_valid_mask=Topology_Helper::Face_Valid_Mask(axis);
-            const TV X=hierarchy->Lattice(level).Face(axis,face_index);
-            for(size_t i=0;i<velocity_sources.size();++i) if(velocity_sources(i)->Inside(X)){
-                if(hierarchy->template Set<unsigned>(level,&Struct_type::flags).Is_Set(face_offset,face_valid_mask))
-                    flags(face_offset)&=~face_active_mask;
-                break;}}}
+    // for(int level=0;level<levels;++level){
+    //     auto flags=hierarchy->Allocator(level).template Get_Array<Struct_type,unsigned>(&Struct_type::flags);
+    //     for(Grid_Iterator_Face<T,d> iterator(hierarchy->Lattice(level));iterator.Valid();iterator.Next()){
+    //         const int axis=iterator.Axis();const T_INDEX& face_index=iterator.Face_Index();
+    //         uint64_t face_offset=Flag_array_mask::Linear_Offset(face_index._data);
+    //         const uint64_t face_active_mask=Topology_Helper::Face_Active_Mask(axis);
+    //         const uint64_t face_valid_mask=Topology_Helper::Face_Valid_Mask(axis);
+    //         const TV X=hierarchy->Lattice(level).Face(axis,face_index);
+    //         for(size_t i=0;i<velocity_sources1.size();++i) if(velocity_sources(i)->Inside(X)){
+    //             if(hierarchy->template Set<unsigned>(level,&Struct_type::flags).Is_Set(face_offset,face_valid_mask))
+    //                 flags(face_offset)&=~face_active_mask;
+    //             break;}}}
 }
 //######################################################################
 // Initialize_Velocity_Field
@@ -358,10 +359,10 @@ template<class T,int d> void Spray_Example<T,d>::
 Initialize_Velocity_Field()
 {
     Log::cout<<"initializing velocity_field ..."<<std::endl;
-    Array<TV> source_velocity;
-    source_velocity.Append(TV::Axis_Vector(1)*bv);
-    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity1_channels,level);
-    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity_sources,source_velocity,face_velocity2_channels,level);
+    Array<TV> source_velocity1; Array<TV> source_velocity2;
+    source_velocity1.Append(init_v1); source_velocity2.Append(init_v2);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity1_sources,source_velocity1,face_velocity1_channels,level);
+    Source_Velocity_Setup<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),velocity2_sources,source_velocity2,face_velocity2_channels,level);
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 }
 //######################################################################
@@ -379,7 +380,8 @@ Register_Options()
     parse_args->Add_Integer_Argument("-threads",1,"Number of threads for OpenMP to use");
     if(d==2) parse_args->Add_Vector_2D_Argument("-size",Vector<double,2>(64.),"n","Grid resolution");
     else if(d==3) parse_args->Add_Vector_3D_Argument("-size",Vector<double,3>(64.),"n","Grid resolution");
-    parse_args->Add_Double_Argument("-bv",(T)1.,"Background velocity(along y axis).");
+    if(d==2) parse_args->Add_Vector_2D_Argument("-domain",Vector<double,2>(1.),"n","domain");
+    else if(d==3) parse_args->Add_Vector_3D_Argument("-domain",Vector<double,3>(1.),"n","domain");
     parse_args->Add_Double_Argument("-rho1",(T)10.,"rho1.");
     parse_args->Add_Double_Argument("-rho2",(T)1.,"rho2.");
     parse_args->Add_Double_Argument("-sr",(T)1.,"Source rate");
@@ -405,7 +407,8 @@ Parse_Options()
     omp_set_num_threads(number_of_threads);
     if(d==2){auto cell_counts_2d=parse_args->Get_Vector_2D_Value("-size");for(int v=0;v<d;++v) counts(v)=cell_counts_2d(v);}
     else{auto cell_counts_3d=parse_args->Get_Vector_3D_Value("-size");for(int v=0;v<d;++v) counts(v)=cell_counts_3d(v);}
-    bv=parse_args->Get_Double_Value("-bv");
+    if(d==2){auto cell_domain_2d=parse_args->Get_Vector_2D_Value("-domain");for(int v=0;v<d;++v) domain(v)=cell_domain_2d(v);}
+    else{auto cell_domain_3d=parse_args->Get_Vector_3D_Value("-domain");for(int v=0;v<d;++v) domain(v)=cell_domain_3d(v);}
     rho1=parse_args->Get_Double_Value("-rho1");
     rho2=parse_args->Get_Double_Value("-rho2");
     source_rate=parse_args->Get_Double_Value("-sr");

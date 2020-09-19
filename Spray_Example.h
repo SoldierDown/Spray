@@ -40,7 +40,6 @@ class Spray_Example: public Example<T,d>
     bool explicit_diffusion;
     bool uvf;
     T source_rate;
-    T bv;
     T_INDEX counts;
     int level,levels,mg_levels,cg_iterations,cg_restart_iterations;
     T cfl,cg_tolerance;
@@ -53,8 +52,9 @@ class Spray_Example: public Example<T,d>
 
     T rho1;
     T rho2;
-
-
+    TV domain;
+    TV init_v1;
+    TV init_v2;
     T Struct_type::* alpha1_channel;
     T Struct_type::* alpha2_channel;
 
@@ -64,7 +64,8 @@ class Spray_Example: public Example<T,d>
     Vector<T Struct_type::*,d> face_velocity2_backup_channels;
     Vector<Vector<bool,2>,d> domain_walls;
 
-    Array<Implicit_Object<T,d>*> velocity_sources;
+    Array<Implicit_Object<T,d>*> velocity1_sources;
+    Array<Implicit_Object<T,d>*> velocity2_sources;
     Array<Implicit_Object<T,d>*> density_sources;
 
     Spray_Example();
