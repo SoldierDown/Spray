@@ -29,12 +29,12 @@ class Combination_Multiply_Helper
   public:
     Combination_Multiply_Helper(Hierarchy& hierarchy,Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
                             T Struct_type::* p_channel,T Struct_type::* alpha_channel,T Struct_type::* Ap_channel,
-                            T rho1,T rho2,T dt)
-    {Run(hierarchy,allocator,blocks,p_channel,alpha_channel,Ap_channel,rho1,rho2,dt);}
+                            T rho1,T rho2)
+    {Run(hierarchy,allocator,blocks,p_channel,alpha_channel,Ap_channel,rho1,rho2);}
 
     void Run(Hierarchy& hierarchy,Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
             T Struct_type::* p_channel,T Struct_type::* alpha_channel,T Struct_type::* Ap_channel,
-            T rho1,T rho2,T dt) const
+            T rho1,T rho2) const
     {
         const int level=0;
         auto block_size=allocator.Block_Size();
@@ -43,9 +43,7 @@ class Combination_Multiply_Helper
         auto Ap_data=allocator.template Get_Array<Struct_type,T>(Ap_channel);
         auto flags=allocator.template Get_Const_Array<Struct_type,unsigned>(&Struct_type::flags);
 
-        // const T a=dt/(rho1*rho2);   
         const T c=rho1-rho2;
-        // Log::cout<<"a: "<<a<<", c: "<<c<<std::endl;
         uint64_t face_neighbor_offsets[number_of_faces_per_cell];
         Topology_Helper::Face_Neighbor_Offsets(face_neighbor_offsets);
 

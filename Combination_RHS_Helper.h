@@ -28,13 +28,13 @@ class Combination_RHS_Helper
     Combination_RHS_Helper(Hierarchy& hierarchy,Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
                         T Struct_type::* rhs_channel,T Struct_type::* alpha1_channel,T Struct_type::* alpha2_channel,
                         Channel_Vector& face_velocity1_channels,Channel_Vector& face_velocity2_channels,
-                        const T& rho1,const T& rho2,const T& dt,const T& one_over_dx)
-    {Run(hierarchy,allocator,blocks,rhs_channel,alpha1_channel,alpha2_channel,face_velocity1_channels,face_velocity2_channels,rho1,rho2,dt,one_over_dx);}
+                        const T& rho1,const T& rho2,const T& one_over_dx)
+    {Run(hierarchy,allocator,blocks,rhs_channel,alpha1_channel,alpha2_channel,face_velocity1_channels,face_velocity2_channels,rho1,rho2,one_over_dx);}
 
     void Run(Hierarchy& hierarchy,Allocator_type& allocator,const std::pair<const uint64_t*,unsigned>& blocks,
             T Struct_type::* rhs_channel,T Struct_type::* alpha1_channel,T Struct_type::* alpha2_channel,
             Channel_Vector& face_velocity1_channels,Channel_Vector& face_velocity2_channels,
-            const T& rho1,const T& rho2,const T& dt,const T& one_over_dx) const
+            const T& rho1,const T& rho2,const T& one_over_dx) const
     {
         const int level=0; const T coeff=(T)1;
         auto flags=allocator.template Get_Const_Array<Struct_type,unsigned>(&Struct_type::flags);

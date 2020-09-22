@@ -95,7 +95,7 @@ class Spray_Example: public Example<T,d>
     void Apply_Drag_Force(const T& dt);
     void Advect_Face_Velocities(const T& dt);
     void Apply_External_Force(const T& dt);
-    void Combination_Project(const T& dt);
+    void Combination_Project();
 
     void Read_Output_Files(const int& frame);    
     void Register_Options() override;

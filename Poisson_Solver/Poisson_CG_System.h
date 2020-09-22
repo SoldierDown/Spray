@@ -28,9 +28,9 @@ class Poisson_CG_System: public Krylov_System_Base<T>
   public:
     Hierarchy& hierarchy;
     T Base_struct_type::* alpha1_channel;
-    T rho1,rho2,dt;
-    Poisson_CG_System(Hierarchy& hierarchy_input,T Base_struct_type::* alpha1_channel_input,T rho1_input,T rho2_input,T dt_input)
-        :Base(false,false),hierarchy(hierarchy_input), alpha1_channel(alpha1_channel_input),rho1(rho1_input),rho2(rho2_input),dt(dt_input)
+    T rho1,rho2;
+    Poisson_CG_System(Hierarchy& hierarchy_input,T Base_struct_type::* alpha1_channel_input,T rho1_input,T rho2_input)
+        :Base(false,false),hierarchy(hierarchy_input), alpha1_channel(alpha1_channel_input),rho1(rho1_input),rho2(rho2_input)
     {
     }
 
@@ -45,7 +45,7 @@ class Poisson_CG_System: public Krylov_System_Base<T>
         T Base_struct_type::* v_channel         = CG_Vector<Base_struct_type,T,d>::Cg_Vector(v).channel;
         T Base_struct_type::* result_channel    = CG_Vector<Base_struct_type,T,d>::Cg_Vector(result).channel;
         Combination_Multiply_Helper<Base_struct_type,T,d>(hierarchy,hierarchy.Allocator(level),hierarchy.Blocks(level),
-                            v_channel,alpha1_channel,result_channel,rho1,rho2,dt);
+                            v_channel,alpha1_channel,result_channel,rho1,rho2);
         
     }
 

@@ -132,13 +132,19 @@ class Standard_Tests: public Spray_Example<T,d>
             Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
             velocity1_sources.Append(velocity_obj);}break;
         case 9:{
-            TV density_min_corner=TV({(T)6.4,(T)4.-(T)2.*cell_width}),density_max_corner=TV({(T)6.8,(T)4.});
+            TV density_min_corner=TV({(T)6.5,(T)4.-(T)4.*cell_width}),density_max_corner=TV({(T)6.7,(T)4.});
             Implicit_Object<T,d>* density_obj=new Box_Implicit_Object<T,d>(density_min_corner,density_max_corner);
             density_sources.Append(density_obj);
 
-            TV velocity_min_corner=TV({(T)8.-(T)2.*cell_width,(T)0.}),velocity_max_corner=TV({(T)8.,(T)4.});
-            Implicit_Object<T,d>* velocity_obj=new Box_Implicit_Object<T,d>(velocity_min_corner,velocity_max_corner);
-            velocity1_sources.Append(velocity_obj);
+
+            TV velocity1_min_corner=TV({(T)6.5,(T)4.-(T)4.*cell_width}),velocity1_max_corner=TV({(T)6.7,(T)4.});
+            Implicit_Object<T,d>* velocity1_obj=new Box_Implicit_Object<T,d>(velocity1_min_corner,velocity1_max_corner);
+            velocity1_sources.Append(velocity1_obj);
+
+            TV velocity2_min_corner=TV({(T)8.-(T)4.*cell_width,(T)0.}),velocity2_max_corner=TV({(T)8.,(T)4.});
+            Implicit_Object<T,d>* velocity2_obj=new Box_Implicit_Object<T,d>(velocity2_min_corner,velocity2_max_corner);
+            velocity2_sources.Append(velocity2_obj);
+
         }break;}
 
     }

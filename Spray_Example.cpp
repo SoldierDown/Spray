@@ -55,7 +55,7 @@ Spray_Example()
     :Base(),hierarchy(nullptr),rasterizer(nullptr)
 {
     level=0;
-    init_v1=TV({0.,-1.});   init_v2=TV({-5.,0.});
+    init_v1=TV({0.,-1.});   init_v2=TV({-3.,0.});
     rho1=(T)10.;            rho2=(T)1.;
     face_velocity1_channels(0)                          = &Struct_type::ch0;
     face_velocity1_channels(1)                          = &Struct_type::ch1;
@@ -106,7 +106,7 @@ Initialize_SPGrid()
     Grid_Hierarchy_Initializer<Struct_type,T,d>::Flag_Ghost_Nodes(*hierarchy);
     Grid_Hierarchy_Initializer<Struct_type,T,d>::Flag_T_Junction_Nodes(*hierarchy);
     Initialize_Dirichlet_Cells<Struct_type,T,d>(*hierarchy,domain_walls);
-    //Set_Neumann_Faces_Inside_Sources();
+    Set_Neumann_Faces_Inside_Sources();
     hierarchy->Update_Block_Offsets();
     hierarchy->Initialize_Red_Black_Partition(2*number_of_threads);
 }
@@ -220,7 +220,7 @@ Apply_External_Force(const T& dt)
 // Combination_Project
 //######################################################################
 template<class T,int d> void Spray_Example<T,d>::
-Combination_Project(const T& dt)
+Combination_Project()
 {
     Log::cout<<"projecting ..."<<std::endl;
     // set up divergence channel
@@ -253,9 +253,9 @@ Combination_Project(const T& dt)
     // Check_Velocity_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,face_velocity2_channels);
 
 
-    Combination_RHS_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),rhs_channel,alpha1_channel,alpha2_channel,face_velocity1_channels,face_velocity2_channels,rho1,rho2,dt,one_over_dx);
+    Combination_RHS_Helper<Struct_type,T,d>(*hierarchy,hierarchy->Allocator(level),hierarchy->Blocks(level),rhs_channel,alpha1_channel,alpha2_channel,face_velocity1_channels,face_velocity2_channels,rho1,rho2,one_over_dx);
 
-    Poisson_CG_System<Struct_type,T,d> cg_system(*hierarchy,alpha1_channel,rho1,rho2,dt);
+    Poisson_CG_System<Struct_type,T,d> cg_system(*hierarchy,alpha1_channel,rho1,rho2);
 
     T Struct_type::* q_channel              = &Struct_type::ch16;
     T Struct_type::* r_channel              = &Struct_type::ch17;
@@ -339,18 +339,16 @@ Advect_Face_Velocities(const T& dt)
 template<class T,int d> void Spray_Example<T,d>::
 Set_Neumann_Faces_Inside_Sources()
 {
-    // for(int level=0;level<levels;++level){
-    //     auto flags=hierarchy->Allocator(level).template Get_Array<Struct_type,unsigned>(&Struct_type::flags);
-    //     for(Grid_Iterator_Face<T,d> iterator(hierarchy->Lattice(level));iterator.Valid();iterator.Next()){
-    //         const int axis=iterator.Axis();const T_INDEX& face_index=iterator.Face_Index();
-    //         uint64_t face_offset=Flag_array_mask::Linear_Offset(face_index._data);
-    //         const uint64_t face_active_mask=Topology_Helper::Face_Active_Mask(axis);
-    //         const uint64_t face_valid_mask=Topology_Helper::Face_Valid_Mask(axis);
-    //         const TV X=hierarchy->Lattice(level).Face(axis,face_index);
-    //         for(size_t i=0;i<velocity_sources1.size();++i) if(velocity_sources(i)->Inside(X)){
-    //             if(hierarchy->template Set<unsigned>(level,&Struct_type::flags).Is_Set(face_offset,face_valid_mask))
-    //                 flags(face_offset)&=~face_active_mask;
-    //             break;}}}
+    auto flags=hierarchy->Allocator(level).template Get_Array<Struct_type,unsigned>(&Struct_type::flags);
+    for(Grid_Iterator_Face<T,d> iterator(hierarchy->Lattice(level));iterator.Valid();iterator.Next()){
+        const int axis=iterator.Axis();const T_INDEX& face_index=iterator.Face_Index();
+        uint64_t face_offset=Flag_array_mask::Linear_Offset(face_index._data);
+        const uint64_t face_active_mask=Topology_Helper::Face_Active_Mask(axis);
+        const uint64_t face_valid_mask=Topology_Helper::Face_Valid_Mask(axis);
+        const TV X=hierarchy->Lattice(level).Face(axis,face_index);
+        for(size_t i=0;i<velocity1_sources.size();++i) if(velocity1_sources(i)->Inside(X)||velocity2_sources(i)->Inside(X)){
+            if(hierarchy->template Set<unsigned>(level,&Struct_type::flags).Is_Set(face_offset,face_valid_mask))
+                flags(face_offset)&=~face_active_mask;break;}}
 }
 //######################################################################
 // Initialize_Velocity_Field
