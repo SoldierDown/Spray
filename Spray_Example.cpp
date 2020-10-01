@@ -56,7 +56,6 @@ Spray_Example()
 {
     level=0;
     init_v1=TV({0.,-1.});   init_v2=TV({-3.,0.});
-    rho1=(T)10.;            rho2=(T)1.;
     face_velocity1_channels(0)                          = &Struct_type::ch0;
     face_velocity1_channels(1)                          = &Struct_type::ch1;
     if(d==3) face_velocity1_channels(2)                 = &Struct_type::ch2;
@@ -122,7 +121,6 @@ Limit_Dt(T& dt,const T time)
     for(int axis=0;axis<d;++axis) other_face_offsets(axis)=Topology_Helper::Axis_Vector_Offset(axis);
 
     // doubt
-    
     Compute_Time_Step<Struct_type,T,d>(*hierarchy,hierarchy->Blocks(level),face_velocity1_channels,
                                         other_face_offsets,level,dt_convection);
 
